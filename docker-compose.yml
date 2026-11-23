@@ -1,0 +1,23 @@
+services:
+  couchdb:
+    image: couchdb:3.3
+    environment:
+      COUCHDB_USER: ${COUCHDB_USER:-admin}
+      COUCHDB_PASSWORD: ${COUCHDB_PASSWORD:?define COUCHDB_PASSWORD en .env}
+    ports: ["5984:5984"]
+    volumes: ["couch_data:/opt/couchdb/data"]
+
+  api:
+    build: .
+    depends_on: [couchdb]
+    environment:
+      BIND_ADDR: 0.0.0.0:8080
+      COUCHDB_URL: http://couchdb:5984
+      COUCHDB_USER: ${COUCHDB_USER:-admin}
+      COUCHDB_PASSWORD: ${COUCHDB_PASSWORD}
+      COUCHDB_DB: ${COUCHDB_DB:-reparto}
+      RUST_LOG: info
+    ports: ["8080:8080"]
+
+volumes:
+  couch_data:
