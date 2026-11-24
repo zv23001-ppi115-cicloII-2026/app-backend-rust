@@ -9,7 +9,10 @@ use std::{sync::Arc, time::Duration};
 use boundary::{
     couchdb::{couch_client::CouchClient, couch_pedido_repo::CouchPedidoRepo},
     http::{handlers::AppState, router::crear_router},
-    motor_rutas::optimizador_placeholder::OptimizadorPlaceholder,
+     motor_rutas::{
+        distancias::{HaversineUrbano, Osrm, ProveedorDistancias},
+        optimizador_2opt::Optimizador2Opt,
+    },
 };
 use control::{metricas::Metricas, pedido_control::PedidoControl, ruta_control::RutaControl};
 
@@ -37,9 +40,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         });
     }
 
+    let distancias: Arc<dyn ProveedorDistancias> = match &cfg.osrm_url {
+        Some(url) => Arc::new(Osrm::new(url, cfg.osrm_timeout_ms, cfg.factor_circuito)),
+        None => Arc::new(HaversineUrbano::new(cfg.factor_circuito)),
+    };
+
+    let optimizador = Arc::new(Optimizador2Opt::new(distancias));
+    
     let estado = AppState {
         pedidos: Arc::new(PedidoControl::new(Arc::new(CouchPedidoRepo::new(couch)))),
-        rutas: Arc::new(RutaControl::new(Arc::new(OptimizadorPlaceholder))),
+        rutas: Arc::new(RutaControl::new(optimizador)),
         metricas,
     };
 

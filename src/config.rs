@@ -6,6 +6,9 @@ pub struct Config {
     pub couchdb_user: String,
     pub couchdb_password: String,
     pub couchdb_db: String,
+    pub osrm_url: Option<String>,
+    pub osrm_timeout_ms: u64,
+    pub factor_circuito: f64,
 }
 
 impl Config {
@@ -20,6 +23,9 @@ impl Config {
             couchdb_user: var("COUCHDB_USER", "admin"),
             couchdb_password: var("COUCHDB_PASSWORD", ""),
             couchdb_db: var("COUCHDB_DB", "reparto"),
+            osrm_url: std::env::var("OSRM_URL").ok().filter(|v| !v.trim().is_empty()),
+            osrm_timeout_ms: var("OSRM_TIMEOUT_MS", "2000").parse().unwrap_or(2000),
+            factor_circuito: var("FACTOR_CIRCUITO", "1.3").parse().unwrap_or(1.3),
         }
     }
 }
