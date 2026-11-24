@@ -1,0 +1,6 @@
+{
+  "index": { "fields": ["tipo", "repartidor_id"] },
+  "ddoc": "idx-pedidos-repartidor",
+  "name": "pedidos-por-repartidor",
+  "type": "json"
+}

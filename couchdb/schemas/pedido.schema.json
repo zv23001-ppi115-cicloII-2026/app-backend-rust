@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/schemas/pedido.schema.json",
+  "title": "Pedido CouchDB",
+  "description": "Documento pedido persistido por el backend y sincronizable offline-first.",
+  "type": "object",
+  "required": [
+    "_id",
+    "tipo",
+    "cliente",
+    "direccion",
+    "ubicacion",
+    "total",
+    "estado",
+    "repartidor_id",
+    "creado_en",
+    "actualizado_en",
+    "entregado_en"
+  ],
+  "properties": {
+    "_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100,
+      "pattern": "^(?!_)[A-Za-z0-9:_-]+$"
+    },
+    "_rev": { "type": "string", "minLength": 1 },
+    "tipo": { "const": "pedido" },
+    "cliente": { "type": "string", "minLength": 1 },
+    "direccion": { "type": "string", "minLength": 1 },
+    "ubicacion": {
+      "type": "object",
+      "required": ["lat", "lng"],
+      "properties": {
+        "lat": { "type": "number", "minimum": -90, "maximum": 90 },
+        "lng": { "type": "number", "minimum": -180, "maximum": 180 }
+      },
+      "additionalProperties": false
+    },
+    "total": { "type": "number", "minimum": 0 },
+    "estado": {
+      "enum": ["pendiente", "asignado", "en_ruta", "entregado", "cancelado"]
+    },
+    "repartidor_id": { "type": ["string", "null"] },
+    "creado_en": { "type": "string", "format": "date-time" },
+    "actualizado_en": { "type": "string", "format": "date-time" },
+    "entregado_en": { "type": ["string", "null"], "format": "date-time" }
+  },
+  "additionalProperties": true
+}

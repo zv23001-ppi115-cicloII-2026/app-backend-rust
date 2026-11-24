@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/schemas/ruta-optimizada.schema.json",
+  "title": "Respuesta de ruta optimizada",
+  "description": "Contrato de la respuesta de POST /api/v1/rutas/optimizar; actualmente no se persiste.",
+  "type": "object",
+  "required": [
+    "repartidor_id",
+    "orden",
+    "distancia_km",
+    "algoritmo",
+    "tiempo_calculo_ms"
+  ],
+  "properties": {
+    "repartidor_id": { "type": "string", "minLength": 1 },
+    "orden": { "type": "array", "items": { "type": "string" } },
+    "distancia_km": { "type": "number", "minimum": 0 },
+    "algoritmo": { "type": "string", "minLength": 1 },
+    "tiempo_calculo_ms": { "type": "number", "minimum": 0 }
+  },
+  "additionalProperties": false
+}

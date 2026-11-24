@@ -1,0 +1,6 @@
+{
+  "index": { "fields": ["tipo", "estado"] },
+  "ddoc": "idx-pedidos-estado",
+  "name": "pedidos-por-estado",
+  "type": "json"
+}

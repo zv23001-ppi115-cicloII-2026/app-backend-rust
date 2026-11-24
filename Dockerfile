@@ -2,6 +2,7 @@ FROM rust:1-slim-bookworm AS build
 WORKDIR /app
 COPY Cargo.toml ./
 COPY src ./src
+COPY couchdb ./couchdb
 RUN cargo build --release
 
 FROM debian:bookworm-slim
