@@ -1,5 +1,5 @@
 [package]
-name = "app-backend"
+name = "app-backend-rust"
 version = "0.1.0"
 edition = "2021"
 description = "API y lógica de negocio (10.1.1) - app offline-first con CouchDB"

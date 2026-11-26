@@ -12,7 +12,7 @@ use serde_json::{json, Value};
 
 use crate::control::{
     metricas::{Metricas, Snapshot},
-    pedido_control::{PedidoControl, ResultadoLote},
+    pedido_control::{PedidoControl, ResultadoLote, ResumenOperativo},
     puertos::FiltroPedidos,
     ruta_control::RutaControl,
 };
@@ -72,11 +72,18 @@ pub async fn listar_pedidos(
     State(s): State<AppState>,
     Query(q): Query<ListarQuery>,
 ) -> Result<Json<Vec<Pedido>>, AppError> {
-    let filtro = FiltroPedidos { estado: q.estado, repartidor_id: q.repartidor_id, limite: q.limite.unwrap_or(100) };
+    let filtro = FiltroPedidos {
+        estado: q.estado,
+        repartidor_id: q.repartidor_id,
+        limite: q.limite.unwrap_or(100),
+    };
     Ok(Json(s.pedidos.listar(filtro).await?))
 }
 
-pub async fn obtener_pedido(State(s): State<AppState>, Path(id): Path<String>) -> Result<Json<Pedido>, AppError> {
+pub async fn obtener_pedido(
+    State(s): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<Pedido>, AppError> {
     Ok(Json(s.pedidos.obtener(&id).await?))
 }
 
@@ -85,7 +92,10 @@ pub async fn cambiar_estado(
     Path(id): Path<String>,
     Json(c): Json<CambioEstado>,
 ) -> Result<Json<Pedido>, AppError> {
-    let p = s.pedidos.cambiar_estado(&id, c.estado, c.repartidor_id, c.entregado_en).await?;
+    let p = s
+        .pedidos
+        .cambiar_estado(&id, c.estado, c.repartidor_id, c.entregado_en)
+        .await?;
     s.metricas.contar_docs(1);
     Ok(Json(p))
 }
@@ -99,4 +109,10 @@ pub async fn optimizar_ruta(
 
 pub async fn metricas(State(s): State<AppState>) -> Json<Snapshot> {
     Json(s.metricas.snapshot())
+}
+
+pub async fn resumen_operativo(
+    State(s): State<AppState>,
+) -> Result<Json<ResumenOperativo>, AppError> {
+    Ok(Json(s.pedidos.resumen_operativo().await?))
 }

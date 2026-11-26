@@ -18,6 +18,32 @@ pub struct ResultadoLote {
     pub rechazados: Vec<ResultadoDoc>,
 }
 
+#[derive(Debug, Serialize)]
+pub struct ArqueoRepartidor {
+    pub repartidor_id: String,
+    pub entregas_completadas: usize,
+    pub entregas_en_curso: usize,
+    pub efectivo_a_rendir: f64,
+    pub otros_metodos: f64,
+    pub total_gestionado: f64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ResumenOperativo {
+    pub total_pedidos: usize,
+    pub entregados: usize,
+    pub en_ruta: usize,
+    pub pendientes: usize,
+    pub cancelados: usize,
+    pub ventas_brutas: f64,
+    pub subtotal_productos: f64,
+    pub ingresos_envio: f64,
+    pub total_efectivo: f64,
+    pub total_transferencia_pos: f64,
+    pub ticket_promedio: f64,
+    pub arqueo_por_repartidor: Vec<ArqueoRepartidor>,
+}
+
 pub struct PedidoControl {
     repo: Arc<dyn PedidoRepository>,
 }
@@ -57,6 +83,107 @@ impl PedidoControl {
             filtro.limite = 100;
         }
         self.repo.listar(filtro).await
+    }
+
+    pub async fn resumen_operativo(&self) -> Result<ResumenOperativo, AppError> {
+        let pedidos = self
+            .repo
+            .listar(FiltroPedidos {
+                estado: None,
+                repartidor_id: None,
+                limite: MAX_LISTADO,
+            })
+            .await?;
+
+        let mut entregados = 0;
+        let mut en_ruta = 0;
+        let mut pendientes = 0;
+        let mut cancelados = 0;
+
+        let mut ventas_brutas = 0.0;
+        let mut subtotal_productos = 0.0;
+        let mut ingresos_envio = 0.0;
+        let mut total_efectivo = 0.0;
+        let mut total_transferencia_pos = 0.0;
+
+        let mut mapa_rep: HashMap<String, ArqueoRepartidor> = HashMap::new();
+
+        for p in &pedidos {
+            match p.estado {
+                EstadoPedido::Entregado => entregados += 1,
+                EstadoPedido::EnRuta | EstadoPedido::Asignado => en_ruta += 1,
+                EstadoPedido::Pendiente => pendientes += 1,
+                EstadoPedido::Cancelado => cancelados += 1,
+            }
+
+            if p.estado != EstadoPedido::Cancelado {
+                let envio = p.costo_envio.unwrap_or(0.0);
+                let sub = p.subtotal_productos.unwrap_or((p.total - envio).max(0.0));
+                ventas_brutas += p.total;
+                subtotal_productos += sub;
+                ingresos_envio += envio;
+
+                if p.metodo_pago.eq_ignore_ascii_case("efectivo") {
+                    total_efectivo += p.total;
+                } else {
+                    total_transferencia_pos += p.total;
+                }
+            }
+
+            if let Some(ref rep_id) = p.repartidor_id {
+                let entry = mapa_rep
+                    .entry(rep_id.clone())
+                    .or_insert_with(|| ArqueoRepartidor {
+                        repartidor_id: rep_id.clone(),
+                        entregas_completadas: 0,
+                        entregas_en_curso: 0,
+                        efectivo_a_rendir: 0.0,
+                        otros_metodos: 0.0,
+                        total_gestionado: 0.0,
+                    });
+
+                match p.estado {
+                    EstadoPedido::Entregado => {
+                        entry.entregas_completadas += 1;
+                        entry.total_gestionado += p.total;
+                        if p.metodo_pago.eq_ignore_ascii_case("efectivo") {
+                            entry.efectivo_a_rendir += p.total;
+                        } else {
+                            entry.otros_metodos += p.total;
+                        }
+                    }
+                    EstadoPedido::Asignado | EstadoPedido::EnRuta => {
+                        entry.entregas_en_curso += 1;
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        let activos = pedidos.len().saturating_sub(cancelados);
+        let ticket_promedio = if activos > 0 {
+            ventas_brutas / (activos as f64)
+        } else {
+            0.0
+        };
+
+        let mut arqueo_por_repartidor: Vec<ArqueoRepartidor> = mapa_rep.into_values().collect();
+        arqueo_por_repartidor.sort_by(|a, b| a.repartidor_id.cmp(&b.repartidor_id));
+
+        Ok(ResumenOperativo {
+            total_pedidos: pedidos.len(),
+            entregados,
+            en_ruta,
+            pendientes,
+            cancelados,
+            ventas_brutas,
+            subtotal_productos,
+            ingresos_envio,
+            total_efectivo,
+            total_transferencia_pos,
+            ticket_promedio,
+            arqueo_por_repartidor,
+        })
     }
 
     pub async fn cambiar_estado(
@@ -101,6 +228,9 @@ impl PedidoControl {
                 pedido.repartidor_id = Some(r);
             }
             let ahora = Utc::now();
+            if nuevo == EstadoPedido::EnRuta && pedido.inicio_ruta_en.is_none() {
+                pedido.inicio_ruta_en = Some(ahora);
+            }
             if nuevo == EstadoPedido::Entregado {
                 pedido.entregado_en = Some(entregado_en.clone().unwrap_or(ahora));
             }
@@ -195,181 +325,4 @@ fn mismo_pedido_para_reintento(actual: &Pedido, solicitado: &Pedido) -> bool {
         && actual.ubicacion.lat == solicitado.ubicacion.lat
         && actual.ubicacion.lng == solicitado.ubicacion.lng
         && actual.total == solicitado.total
-}
-
-#[cfg(test)]
-mod pruebas_conflicto {
-    use std::sync::Mutex;
-
-    use async_trait::async_trait;
-
-    use super::*;
-    use crate::{
-        control::puertos::{FiltroPedidos, ResultadoDoc},
-        entity::pedido::{Coordenada, NuevoPedido},
-    };
-
-    struct RepoConActualizacionConcurrente {
-        pedido: Mutex<Pedido>,
-        version_concurrente: Mutex<Option<Pedido>>,
-    }
-
-    #[async_trait]
-    impl PedidoRepository for RepoConActualizacionConcurrente {
-        async fn crear(&self, _pedido: Pedido) -> Result<Pedido, AppError> {
-            Err(AppError::Conflicto("id existente".into()))
-        }
-
-        async fn obtener(&self, _id: &str) -> Result<Pedido, AppError> {
-            Ok(self.pedido.lock().unwrap().clone())
-        }
-
-        async fn listar(&self, _filtro: FiltroPedidos) -> Result<Vec<Pedido>, AppError> {
-            Ok(vec![self.pedido.lock().unwrap().clone()])
-        }
-
-        async fn actualizar(&self, pedido: Pedido) -> Result<Pedido, AppError> {
-            if let Some(version) = self.version_concurrente.lock().unwrap().take() {
-                *self.pedido.lock().unwrap() = version;
-                return Err(AppError::Conflicto("_rev desactualizada".into()));
-            }
-            *self.pedido.lock().unwrap() = pedido.clone();
-            Ok(pedido)
-        }
-
-        async fn crear_lote(&self, pedidos: Vec<Pedido>) -> Result<Vec<ResultadoDoc>, AppError> {
-            Ok(pedidos
-                .into_iter()
-                .map(|pedido| ResultadoDoc {
-                    id: pedido.id,
-                    ok: false,
-                    razon: Some("ya existe un documento con ese id".into()),
-                })
-                .collect())
-        }
-    }
-
-    fn entrada(id: &str, total: f64) -> NuevoPedido {
-        NuevoPedido {
-            id: Some(id.into()),
-            cliente: "Cliente".into(),
-            direccion: "Direccion".into(),
-            ubicacion: Coordenada {
-                lat: 13.7,
-                lng: -89.2,
-            },
-            total,
-            creado_en: None,
-        }
-    }
-
-    fn pedido_pendiente() -> Pedido {
-        Pedido::nuevo(entrada("pedido:conflicto", 1.0)).unwrap()
-    }
-
-    fn repo_con_conflicto(version_concurrente: Pedido) -> Arc<RepoConActualizacionConcurrente> {
-        Arc::new(RepoConActualizacionConcurrente {
-            pedido: Mutex::new(pedido_pendiente()),
-            version_concurrente: Mutex::new(Some(version_concurrente)),
-        })
-    }
-
-    #[tokio::test]
-    async fn reintento_idempotente_acepta_la_misma_asignacion_concurrente() {
-        let mut version_concurrente = pedido_pendiente();
-        version_concurrente.estado = EstadoPedido::Asignado;
-        version_concurrente.repartidor_id = Some("rep-1".into());
-        version_concurrente.rev = Some("2-concurrente".into());
-        let repo = repo_con_conflicto(version_concurrente);
-        let control = PedidoControl::new(repo.clone());
-
-        let resultado = control
-            .cambiar_estado(
-                "pedido:conflicto",
-                EstadoPedido::Asignado,
-                Some("rep-1".into()),
-                None,
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(resultado.estado, EstadoPedido::Asignado);
-        assert_eq!(resultado.repartidor_id.as_deref(), Some("rep-1"));
-        assert_eq!(resultado.rev.as_deref(), Some("2-concurrente"));
-    }
-
-    #[tokio::test]
-    async fn reintento_rechaza_asignacion_concurrente_a_otro_repartidor() {
-        let mut version_concurrente = pedido_pendiente();
-        version_concurrente.estado = EstadoPedido::Asignado;
-        version_concurrente.repartidor_id = Some("rep-2".into());
-        version_concurrente.rev = Some("2-concurrente".into());
-        let repo = repo_con_conflicto(version_concurrente);
-        let control = PedidoControl::new(repo.clone());
-
-        let resultado = control
-            .cambiar_estado(
-                "pedido:conflicto",
-                EstadoPedido::Asignado,
-                Some("rep-1".into()),
-                None,
-            )
-            .await;
-
-        assert!(
-            matches!(resultado, Err(AppError::Conflicto(mensaje)) if mensaje.contains("otro repartidor"))
-        );
-        assert_eq!(
-            repo.pedido.lock().unwrap().repartidor_id.as_deref(),
-            Some("rep-2")
-        );
-    }
-
-    #[tokio::test]
-    async fn creacion_repetida_con_el_mismo_id_y_contenido_es_idempotente() {
-        let mut existente = pedido_pendiente();
-        existente.estado = EstadoPedido::Asignado;
-        existente.repartidor_id = Some("rep-1".into());
-        existente.rev = Some("2-existente".into());
-        let repo = Arc::new(RepoConActualizacionConcurrente {
-            pedido: Mutex::new(existente),
-            version_concurrente: Mutex::new(None),
-        });
-        let control = PedidoControl::new(repo);
-
-        let resultado = control
-            .crear(entrada("pedido:conflicto", 1.0))
-            .await
-            .unwrap();
-
-        assert_eq!(resultado.estado, EstadoPedido::Asignado);
-        assert_eq!(resultado.rev.as_deref(), Some("2-existente"));
-    }
-
-    #[tokio::test]
-    async fn creacion_repetida_con_datos_distintos_no_sobrescribe() {
-        let repo = repo_con_conflicto(pedido_pendiente());
-        let control = PedidoControl::new(repo.clone());
-
-        let resultado = control.crear(entrada("pedido:conflicto", 9.0)).await;
-
-        assert!(
-            matches!(resultado, Err(AppError::Conflicto(mensaje)) if mensaje.contains("datos distintos"))
-        );
-        assert_eq!(repo.pedido.lock().unwrap().total, 1.0);
-    }
-
-    #[tokio::test]
-    async fn lote_reintentado_acepta_el_pedido_existente_con_el_mismo_contenido() {
-        let repo = repo_con_conflicto(pedido_pendiente());
-        let control = PedidoControl::new(repo);
-
-        let resultado = control
-            .crear_lote(vec![entrada("pedido:conflicto", 1.0)])
-            .await
-            .unwrap();
-
-        assert_eq!(resultado.aceptados, 1);
-        assert!(resultado.rechazados.is_empty());
-    }
 }

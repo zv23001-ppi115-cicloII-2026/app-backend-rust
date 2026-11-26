@@ -1,4 +1,4 @@
-//! Datos de entrada y salida del motor de rutas (la lógica es de P2, 10.1.2).
+//! Datos de entrada y salida del motor de rutas (10.1.2).
 use serde::{Deserialize, Serialize};
 
 use super::pedido::Coordenada;
@@ -7,6 +7,8 @@ use super::pedido::Coordenada;
 pub struct Parada {
     pub pedido_id: String,
     pub ubicacion: Coordenada,
+    #[serde(default)]
+    pub titulo_parada: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

@@ -7,7 +7,7 @@ RUN cargo build --release
 
 FROM debian:bookworm-slim
 RUN useradd -m app
-COPY --from=build /app/target/release/app-backend /usr/local/bin/reparto-backend
+COPY --from=build /app/target/release/app-backend-rust /usr/local/bin/reparto-backend
 USER app
 EXPOSE 8080
-CMD ["app-backend"]
+CMD ["reparto-backend"]

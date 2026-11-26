@@ -66,7 +66,11 @@ pub fn id_valido(id: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | ':'))
 }
 
-/// Documento persistido en CouchDB (campo `tipo` = "pedido", igual criterio que el documento `producto` previo).
+fn metodo_pago_default() -> String {
+    "efectivo".to_string()
+}
+
+/// Documento persistido en CouchDB (campo `tipo` = "pedido").
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Pedido {
     #[serde(rename = "_id")]
@@ -75,26 +79,56 @@ pub struct Pedido {
     pub rev: Option<String>,
     pub tipo: String,
     pub cliente: String,
+    #[serde(default)]
+    pub titulo_parada: Option<String>,
     pub direccion: String,
+    #[serde(default)]
+    pub referencia_visual: Option<String>,
     pub ubicacion: Coordenada,
     pub total: f64,
+    #[serde(default)]
+    pub subtotal_productos: Option<f64>,
+    #[serde(default)]
+    pub costo_envio: Option<f64>,
+    #[serde(default = "metodo_pago_default")]
+    pub metodo_pago: String, // efectivo, transferencia, pos, pagado
+    #[serde(default)]
+    pub paga_con: Option<f64>,
+    #[serde(default)]
+    pub orden_en_ruta: Option<u32>,
+    #[serde(default)]
+    pub motivo_incidencia: Option<String>,
     pub estado: EstadoPedido,
     #[serde(default)]
     pub repartidor_id: Option<String>,
     pub creado_en: DateTime<Utc>,
     pub actualizado_en: DateTime<Utc>,
     #[serde(default)]
+    pub inicio_ruta_en: Option<DateTime<Utc>>,
+    #[serde(default)]
     pub entregado_en: Option<DateTime<Utc>>,
 }
 
-/// Datos de entrada para crear un pedido. `id` opcional: el cliente offline lo genera para que el reintento sea idempotente.
+/// Datos de entrada para crear un pedido. `id` opcional: el cliente offline lo genera para idempotencia.
 #[derive(Debug, Clone, Deserialize)]
 pub struct NuevoPedido {
     pub id: Option<String>,
     pub cliente: String,
+    #[serde(default)]
+    pub titulo_parada: Option<String>,
     pub direccion: String,
+    #[serde(default)]
+    pub referencia_visual: Option<String>,
     pub ubicacion: Coordenada,
     pub total: f64,
+    #[serde(default)]
+    pub subtotal_productos: Option<f64>,
+    #[serde(default)]
+    pub costo_envio: Option<f64>,
+    #[serde(default)]
+    pub metodo_pago: Option<String>,
+    #[serde(default)]
+    pub paga_con: Option<f64>,
     pub creado_en: Option<DateTime<Utc>>,
 }
 
@@ -113,18 +147,46 @@ impl Pedido {
             None => format!("pedido:{}", uuid::Uuid::new_v4()),
         };
         let ahora = Utc::now();
+        let cliente_limpio = n.cliente.trim().to_string();
+        let titulo = n
+            .titulo_parada
+            .map(|t| t.trim().to_string())
+            .filter(|t| !t.is_empty())
+            .or_else(|| Some(format!("Entrega · {}", cliente_limpio)));
+
+        let costo_envio = n.costo_envio.unwrap_or(0.0).max(0.0);
+        let subtotal = n
+            .subtotal_productos
+            .unwrap_or_else(|| (n.total - costo_envio).max(0.0));
+
         Ok(Pedido {
             id,
             rev: None,
             tipo: "pedido".into(),
-            cliente: n.cliente.trim().to_string(),
+            cliente: cliente_limpio,
+            titulo_parada: titulo,
             direccion: n.direccion.trim().to_string(),
+            referencia_visual: n
+                .referencia_visual
+                .map(|r| r.trim().to_string())
+                .filter(|r| !r.is_empty()),
             ubicacion: n.ubicacion,
             total: n.total,
+            subtotal_productos: Some(subtotal),
+            costo_envio: Some(costo_envio),
+            metodo_pago: n
+                .metodo_pago
+                .map(|m| m.trim().to_lowercase())
+                .filter(|m| !m.is_empty())
+                .unwrap_or_else(metodo_pago_default),
+            paga_con: n.paga_con,
+            orden_en_ruta: None,
+            motivo_incidencia: None,
             estado: EstadoPedido::Pendiente,
             repartidor_id: None,
             creado_en: n.creado_en.unwrap_or(ahora),
             actualizado_en: ahora,
+            inicio_ruta_en: None,
             entregado_en: None,
         })
     }
