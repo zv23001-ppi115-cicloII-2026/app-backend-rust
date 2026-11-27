@@ -10,12 +10,14 @@ use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
+use crate::boundary::couchdb::couch_client::CouchClient;
 use crate::control::{
     metricas::{Metricas, Snapshot},
     pedido_control::{PedidoControl, ResultadoLote, ResumenOperativo},
     puertos::FiltroPedidos,
     ruta_control::RutaControl,
 };
+use crate::entity::auth::{DocumentoUsuarios, LoginRequest, SesionUsuario};
 use crate::entity::pedido::{EstadoPedido, NuevoPedido, Pedido};
 use crate::entity::ruta::{RutaOptimizada, SolicitudRuta};
 use crate::error::AppError;
@@ -25,6 +27,7 @@ pub struct AppState {
     pub pedidos: Arc<PedidoControl>,
     pub rutas: Arc<RutaControl>,
     pub metricas: Arc<Metricas>,
+    pub couch: CouchClient,
 }
 
 #[derive(Debug, Deserialize)]
@@ -48,6 +51,42 @@ pub struct LotePedidos {
 
 pub async fn salud() -> Json<Value> {
     Json(json!({ "estado": "ok", "servicio": "reparto-backend", "version": env!("CARGO_PKG_VERSION") }))
+}
+
+pub async fn login(
+    State(s): State<AppState>,
+    Json(req): Json<LoginRequest>,
+) -> Result<Json<SesionUsuario>, AppError> {
+    let usuario_in = req.usuario.trim();
+    if usuario_in.is_empty() || req.password.is_empty() {
+        return Err(AppError::Validacion(
+            "Debe ingresar usuario y contraseña".into(),
+        ));
+    }
+
+    let doc: DocumentoUsuarios = match s.couch.leer("usuarios").await {
+        Ok(d) => d,
+        Err(AppError::NoEncontrado(_)) => {
+            return Err(AppError::NoAutorizado(
+                "Documento 'usuarios' no configurado en CouchDB".into(),
+            ));
+        }
+        Err(e) => return Err(e),
+    };
+
+    let encontrado = doc
+        .usuarios
+        .into_iter()
+        .find(|u| u.usuario.eq_ignore_ascii_case(usuario_in) && u.password == req.password)
+        .ok_or_else(|| AppError::NoAutorizado("Usuario o contraseña incorrectos".into()))?;
+
+    Ok(Json(SesionUsuario {
+        usuario: encontrado.usuario,
+        rol: encontrado.rol,
+        nombre: encontrado.nombre,
+        repartidor_id: encontrado.repartidor_id,
+        negocio_id: encontrado.negocio_id,
+    }))
 }
 
 pub async fn crear_pedido(

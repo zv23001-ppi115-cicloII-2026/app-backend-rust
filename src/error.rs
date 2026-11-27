@@ -11,6 +11,8 @@ pub enum AppError {
     #[error("{0}")]
     Validacion(String),
     #[error("{0}")]
+    NoAutorizado(String),
+    #[error("{0}")]
     NoEncontrado(String),
     #[error("{0}")]
     Conflicto(String),
@@ -24,6 +26,7 @@ impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (status, codigo) = match &self {
             AppError::Validacion(_) => (StatusCode::BAD_REQUEST, "VALIDACION"),
+            AppError::NoAutorizado(_) => (StatusCode::UNAUTHORIZED, "NO_AUTORIZADO"),
             AppError::NoEncontrado(_) => (StatusCode::NOT_FOUND, "NO_ENCONTRADO"),
             AppError::Conflicto(_) => (StatusCode::CONFLICT, "CONFLICTO"),
             AppError::Upstream(_) => (StatusCode::BAD_GATEWAY, "COUCHDB_NO_DISPONIBLE"),

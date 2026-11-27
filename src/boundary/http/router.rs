@@ -13,6 +13,7 @@ pub fn crear_router(estado: AppState) -> Router {
     let metricas = estado.metricas.clone();
     Router::new()
         .route("/health", get(handlers::salud))
+        .route("/api/v1/auth/login", post(handlers::login))
         .route("/api/v1/pedidos", post(handlers::crear_pedido).get(handlers::listar_pedidos))
         .route("/api/v1/pedidos/lote", post(handlers::crear_lote))
         .route("/api/v1/pedidos/:id", get(handlers::obtener_pedido))

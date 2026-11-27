@@ -67,9 +67,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let optimizador = Arc::new(Optimizador2Opt::new(distancias));
 
     let estado = AppState {
-        pedidos: Arc::new(PedidoControl::new(Arc::new(CouchPedidoRepo::new(couch)))),
+        pedidos: Arc::new(PedidoControl::new(Arc::new(CouchPedidoRepo::new(
+            couch.clone(),
+        )))),
         rutas: Arc::new(RutaControl::new(optimizador)),
         metricas,
+        couch,
     };
 
     let listener = tokio::net::TcpListener::bind(&cfg.bind_addr).await?;
