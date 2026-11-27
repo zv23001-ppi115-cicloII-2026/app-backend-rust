@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/schemas/usuarios.schema.json",
+  "title": "Documento de usuarios para login",
+  "description": "Documento CouchDB con _id usuarios leído por POST /api/v1/auth/login.",
+  "type": "object",
+  "required": ["_id", "usuarios"],
+  "properties": {
+    "_id": { "const": "usuarios" },
+    "_rev": { "type": "string", "minLength": 1 },
+    "usuarios": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["usuario", "password", "rol", "nombre"],
+        "properties": {
+          "usuario": { "type": "string", "minLength": 1 },
+          "password": { "type": "string", "minLength": 1 },
+          "rol": { "enum": ["negocio", "repartidor"] },
+          "nombre": { "type": "string", "minLength": 1 },
+          "negocio_id": { "type": "string", "minLength": 1 },
+          "repartidor_id": { "type": "string", "minLength": 1 }
+        },
+        "allOf": [
+          {
+            "if": { "properties": { "rol": { "const": "negocio" } } },
+            "then": { "required": ["negocio_id"] }
+          },
+          {
+            "if": { "properties": { "rol": { "const": "repartidor" } } },
+            "then": { "required": ["repartidor_id"] }
+          }
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

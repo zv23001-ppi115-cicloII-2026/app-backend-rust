@@ -4,6 +4,8 @@
 
 `schemas/pedido.schema.json` describe el documento persistido por `Pedido`; `_rev` lo asigna CouchDB. El design document `design/reparto.json` aplica validaciones estructurales en el servidor. Las transiciones de estado se validan en `PedidoControl`, donde el backend puede consultar el estado vigente y aplicar la política de concurrencia.
 
+`schemas/usuarios.schema.json` describe el documento `_id: "usuarios"` que consume `POST /api/v1/auth/login`. El validador lo admite como documento de autenticacion separado del tipo `pedido`; los usuarios deben tener rol `negocio` o `repartidor` y su ID asociado. Las contrasenas en texto plano solo son adecuadas para esta practica local, no para produccion.
+
 `schemas/ruta-optimizada.schema.json` documenta la respuesta del optimizador. Las rutas no se persisten actualmente: `RutaControl` solo calcula y devuelve el resultado.
 
 Al iniciar, Reqwest asegura la base, instala el design document y crea los indices Mango usados por `tipo`, `estado` y `repartidor_id`. El selector de pedidos usa siempre `tipo = pedido`.
